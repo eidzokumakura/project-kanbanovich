@@ -22,6 +22,15 @@ export function UserManagement() {
     role: 'user' as 'admin' | 'user',
   });
   const [error, setError] = useState('');
+  const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
+
+  React.useEffect(() => {
+    const handleResize = () => {
+      setIsMobile(window.innerWidth < 768);
+    };
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   const tasks = getCurrentBoardTasks();
 
@@ -40,7 +49,7 @@ export function UserManagement() {
     }
     
     if (editingUser) {
-      // Check for duplicates when editing (excluding current user)
+      // Проверка дубликатов при редактировании (исключая текущего пользователя)
       const existingUserByEmail = users.find(u => u.email.toLowerCase() === formData.email.toLowerCase() && u.id !== editingUser.id);
       const existingUserByName = users.find(u => u.name.toLowerCase() === formData.name.toLowerCase() && u.id !== editingUser.id);
       
@@ -92,7 +101,7 @@ export function UserManagement() {
   };
 
   const getUserTaskStats = (userId: string) => {
-    const userTasks = tasks.filter(task => task.assigneeId === userId);
+    const userTasks = tasks.filter(task => task.assigneeIds?.includes(userId) || task.assigneeId === userId);
     return {
       total: userTasks.length,
       completed: userTasks.filter(task => task.status === 'completed').length,
@@ -107,27 +116,195 @@ export function UserManagement() {
     setError('');
   };
 
+  // Мобильная версия - список пользователей
+  if (isMobile) {
+    return (
+      <div className="p-4 h-full overflow-y-auto">
+        <div className="flex items-center justify-between mb-6">
+          <div className="flex items-center space-x-2">
+            <Users className="w-5 h-5 text-blue-600" />
+            <h2 className="text-lg font-bold text-gray-900 uppercase">ПОЛЬЗОВАТЕЛИ</h2>
+          </div>
+          
+          <button
+            onClick={() => setShowAddUser(true)}
+            className="flex items-center space-x-1 text-gray-800 px-3 py-2 rounded-xl font-medium uppercase text-sm"
+            style={{ backgroundColor: '#CFE8FF' }}
+          >
+            <UserPlus className="w-4 h-4" />
+            <span>ДОБАВИТЬ</span>
+          </button>
+        </div>
+
+        {/* Форма добавления/редактирования пользователя */}
+        {showAddUser && (
+          <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4 mb-6">
+            <h3 className="text-md font-semibold text-gray-900 mb-4 uppercase">
+              {editingUser ? 'РЕДАКТИРОВАТЬ' : 'ДОБАВИТЬ ПОЛЬЗОВАТЕЛЯ'}
+            </h3>
+            
+            {error && (
+              <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-xl flex items-center space-x-2 text-red-700">
+                <AlertCircle className="w-4 h-4" />
+                <span className="text-sm">{error}</span>
+              </div>
+            )}
+            
+            <form onSubmit={handleSubmit} className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2 uppercase">
+                  ПОЛНОЕ ИМЯ
+                </label>
+                <input
+                  type="text"
+                  value={formData.name}
+                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                  className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#CFE8FF] focus:border-[#CFE8FF] transition-colors"
+                  placeholder="ВВЕДИТЕ ПОЛНОЕ ИМЯ"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2 uppercase">
+                  EMAIL АДРЕС
+                </label>
+                <input
+                  type="email"
+                  value={formData.email}
+                  onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                  className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#CFE8FF] focus:border-[#CFE8FF] transition-colors"
+                  placeholder="ВВЕДИТЕ EMAIL АДРЕС"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2 uppercase">
+                  РОЛЬ
+                </label>
+                <select
+                  value={formData.role}
+                  onChange={(e) => setFormData({ ...formData, role: e.target.value as 'admin' | 'user' })}
+                  className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#CFE8FF] focus:border-[#CFE8FF] transition-colors uppercase"
+                >
+                  <option value="user">ПОЛЬЗОВАТЕЛЬ</option>
+                  <option value="admin">АДМИНИСТРАТОР</option>
+                </select>
+              </div>
+
+              <div className="flex items-center space-x-3">
+                <button
+                  type="submit"
+                  className="text-gray-800 px-6 py-2 rounded-xl font-medium uppercase"
+                  style={{ backgroundColor: '#CFE8FF' }}
+                >
+                  {editingUser ? 'ОБНОВИТЬ' : 'ДОБАВИТЬ'}
+                </button>
+                <button
+                  type="button"
+                  onClick={cancelEdit}
+                  className="text-gray-600 hover:text-gray-800 px-6 py-2 rounded-xl hover:bg-gray-100 transition-colors font-medium uppercase"
+                >
+                  ОТМЕНА
+                </button>
+              </div>
+            </form>
+          </div>
+        )}
+
+        {/* Список пользователей */}
+        <div className="space-y-3">
+          {users.map((user) => {
+            const stats = getUserTaskStats(user.id);
+            const isCurrentUser = user.id === currentUser?.id;
+            
+            return (
+              <div key={user.id} className="bg-white rounded-xl shadow-sm border border-gray-200 p-4">
+                <div className="flex items-start justify-between">
+                  <div className="flex items-center space-x-3 flex-1">
+                    <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-teal-500 rounded-full flex items-center justify-center text-white font-medium">
+                      {user.name.charAt(0).toUpperCase()}
+                    </div>
+                    <div className="flex-1">
+                      <div className="font-medium text-gray-900 flex items-center space-x-2">
+                        <span className="uppercase">{user.name}</span>
+                        {isCurrentUser && (
+                          <span className="text-xs px-2 py-1 rounded-full uppercase" style={{ backgroundColor: '#CFE8FF', color: '#1e40af' }}>
+                            ВЫ
+                          </span>
+                        )}
+                      </div>
+                      <div className="text-sm text-gray-600">{user.email}</div>
+                      <div className={`inline-flex items-center space-x-1 px-2 py-1 rounded-full text-xs font-medium mt-1 ${
+                        user.role === 'admin' 
+                          ? 'bg-purple-100 text-purple-700'
+                          : 'bg-gray-100 text-gray-700'
+                      }`}>
+                        {user.role === 'admin' ? (
+                          <Crown className="w-3 h-3" />
+                        ) : (
+                          <UserIcon className="w-3 h-3" />
+                        )}
+                        <span className="uppercase">
+                          {user.role === 'admin' ? 'АДМИНИСТРАТОР' : 'ПОЛЬЗОВАТЕЛЬ'}
+                        </span>
+                      </div>
+                      <div className="text-xs text-gray-500 mt-1">
+                        <div className="uppercase">{stats.total} ВСЕГО ЗАДАЧ</div>
+                        <div className="text-green-600 uppercase">{stats.completed} ВЫПОЛНЕНО</div>
+                      </div>
+                    </div>
+                  </div>
+                  
+                  <div className="flex items-center space-x-2">
+                    <button
+                      onClick={() => handleEdit(user)}
+                      className="p-2 text-gray-600 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                    >
+                      <Edit className="w-4 h-4" />
+                    </button>
+                    {!isCurrentUser && (
+                      <button
+                        onClick={() => handleDelete(user)}
+                        className="p-2 text-gray-600 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    );
+  }
+
+  // Десктопная версия - таблица
   return (
-    <div className="p-6">
+    <div className="p-6 h-full overflow-y-auto">
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center space-x-3">
           <Users className="w-6 h-6 text-blue-600" />
           <h2 className="text-2xl font-bold text-gray-900 uppercase">УПРАВЛЕНИЕ ПОЛЬЗОВАТЕЛЯМИ</h2>
-          <span className="bg-[#CFE8FF] text-blue-700 px-3 py-1 rounded-full text-sm font-medium uppercase">
+          <span className="text-blue-700 px-3 py-1 rounded-full text-sm font-medium uppercase" style={{ backgroundColor: '#CFE8FF' }}>
             {users.length} ПОЛЬЗОВАТЕЛЕЙ
           </span>
         </div>
         
         <button
           onClick={() => setShowAddUser(true)}
-          className="flex items-center space-x-2 bg-[#CFE8FF] text-gray-800 px-4 py-2 rounded-xl hover:bg-blue-200 transition-all font-medium uppercase"
+          className="flex items-center space-x-2 text-gray-800 px-4 py-2 rounded-xl font-medium uppercase"
+          style={{ backgroundColor: '#CFE8FF' }}
         >
           <UserPlus className="w-5 h-5" />
           <span>ДОБАВИТЬ ПОЛЬЗОВАТЕЛЯ</span>
         </button>
       </div>
 
-      {/* Add/Edit User Form */}
+      {/* Форма добавления/редактирования пользователя */}
       {showAddUser && (
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 mb-6">
           <h3 className="text-lg font-semibold text-gray-900 mb-4 uppercase">
@@ -187,7 +364,8 @@ export function UserManagement() {
             <div className="md:col-span-3 flex items-center space-x-3">
               <button
                 type="submit"
-                className="bg-[#CFE8FF] text-gray-800 px-6 py-2 rounded-xl hover:bg-blue-200 transition-colors font-medium uppercase"
+                className="text-gray-800 px-6 py-2 rounded-xl font-medium uppercase"
+                style={{ backgroundColor: '#CFE8FF' }}
               >
                 {editingUser ? 'ОБНОВИТЬ ПОЛЬЗОВАТЕЛЯ' : 'ДОБАВИТЬ ПОЛЬЗОВАТЕЛЯ'}
               </button>
@@ -203,11 +381,11 @@ export function UserManagement() {
         </div>
       )}
 
-      {/* Users List */}
+      {/* Таблица пользователей */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full">
-            <thead className="bg-[#CFE8FF] border-b border-gray-200">
+            <thead className="border-b border-gray-200" style={{ backgroundColor: '#cfd7ff' }}>
               <tr>
                 <th className="text-left py-4 px-6 font-medium text-gray-700 uppercase">ПОЛЬЗОВАТЕЛЬ</th>
                 <th className="text-left py-4 px-6 font-medium text-gray-700 uppercase">EMAIL</th>
@@ -233,7 +411,7 @@ export function UserManagement() {
                           <div className="font-medium text-gray-900 flex items-center space-x-2">
                             <span className="uppercase">{user.name}</span>
                             {isCurrentUser && (
-                              <span className="text-xs bg-[#CFE8FF] text-blue-700 px-2 py-1 rounded-full uppercase">
+                              <span className="text-xs px-2 py-1 rounded-full uppercase" style={{ backgroundColor: '#CFE8FF', color: '#1e40af' }}>
                                 ВЫ
                               </span>
                             )}

@@ -3,8 +3,8 @@ import { AppState, User, Task, Board } from '../types';
 import { useLocalStorage } from '../hooks/useLocalStorage';
 
 interface AppContextType extends AppState {
-  login: (email: string, password: string) => Promise<boolean>;
-  register: (email: string, password: string, name: string) => Promise<boolean>;
+  login: (email: string, password: string, boardLink?: string) => Promise<boolean>;
+  register: (email: string, password: string, name: string, boardLink?: string) => Promise<boolean>;
   logout: () => void;
   addTask: (task: Omit<Task, 'id' | 'createdAt' | 'updatedAt'>) => void;
   updateTask: (taskId: string, updates: Partial<Task>) => void;
@@ -18,6 +18,8 @@ interface AppContextType extends AppState {
   deleteBoard: (boardId: string) => void;
   setCurrentBoard: (boardId: string) => void;
   getCurrentBoardTasks: () => Task[];
+  joinBoardByLink: (boardLink: string) => Promise<boolean>;
+  generateBoardLink: (boardId: string) => string;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -152,7 +154,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [currentUserId, setCurrentUserId] = useLocalStorage<string | null>('kanban-current-user', null);
   const [currentBoardId, setCurrentBoardId] = useLocalStorage<string | null>('kanban-current-board', null);
 
-  // Initialize with demo data if empty
+  // Инициализация с демо данными, если пусто
   useEffect(() => {
     if (storedUsers.length === 0) {
       const demoUsers: User[] = [
@@ -210,6 +212,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           status: 'in-progress',
           priority: 'high',
           assigneeId: '2',
+          assigneeIds: ['2'],
           creatorId: '1',
           boardId: '1',
           deadline: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
@@ -226,6 +229,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           status: 'created',
           priority: 'high',
           assigneeId: '1',
+          assigneeIds: ['1'],
           creatorId: '1',
           boardId: '1',
           isPinned: false,
@@ -241,7 +245,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       dispatch({ type: 'SET_TASKS', payload: storedTasks });
     }
 
-    // Check for existing login
+    // Проверка существующего входа
     if (currentUserId) {
       const user = storedUsers.find(u => u.id === currentUserId);
       if (user) {
@@ -250,7 +254,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
-  // Sync with localStorage
+  // Синхронизация с localStorage
   useEffect(() => {
     setStoredUsers(state.users);
   }, [state.users, setStoredUsers]);
@@ -269,30 +273,78 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }
   }, [state.currentBoardId, setCurrentBoardId]);
 
-  const login = async (email: string, password: string): Promise<boolean> => {
+  // Извлечение ID доски из ссылки
+  const extractBoardIdFromLink = (link: string): string | null => {
+    try {
+      const url = new URL(link);
+      const boardId = url.searchParams.get('board');
+      return boardId;
+    } catch {
+      return null;
+    }
+  };
+
+  // Генерация ссылки на доску
+  const generateBoardLink = (boardId: string): string => {
+    const baseUrl = window.location.origin;
+    return `${baseUrl}?board=${boardId}`;
+  };
+
+  // Присоединение к доске по ссылке
+  const joinBoardByLink = async (boardLink: string): Promise<boolean> => {
+    const boardId = extractBoardIdFromLink(boardLink);
+    if (!boardId) return false;
+
+    const board = state.boards.find(b => b.id === boardId);
+    if (!board) return false;
+
+    // Проверяем, есть ли у пользователя доступ к доске
+    if (state.currentUser?.role === 'admin' || board.createdBy === state.currentUser?.id) {
+      dispatch({ type: 'SET_CURRENT_BOARD', payload: boardId });
+      return true;
+    }
+
+    // Добавляем пользователя в список тех, с кем поделились доской
+    const updatedBoard = {
+      ...board,
+      sharedWith: [...(board.sharedWith || []), state.currentUser?.id || '']
+    };
+    dispatch({ type: 'UPDATE_BOARD', payload: { id: boardId, updates: updatedBoard } });
+    dispatch({ type: 'SET_CURRENT_BOARD', payload: boardId });
+    return true;
+  };
+
+  const login = async (email: string, password: string, boardLink?: string): Promise<boolean> => {
     const user = state.users.find(u => u.email === email);
     if (user) {
       dispatch({ type: 'LOGIN', payload: user });
       setCurrentUserId(user.id);
       
-      // Check if user has access to any boards, if not create a new one
-      const userBoards = state.boards.filter(board => 
-        board.createdBy === user.id || user.role === 'admin'
-      );
-      
-      if (userBoards.length === 0 && user.role !== 'admin') {
-        const newBoard: Board = {
-          id: Date.now().toString(),
-          name: `ДОСКА ${user.name.toUpperCase()}`,
-          description: `ПЕРСОНАЛЬНАЯ ДОСКА ДЛЯ ${user.name.toUpperCase()}`,
-          createdBy: user.id,
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-        };
-        dispatch({ type: 'ADD_BOARD', payload: newBoard });
-        dispatch({ type: 'SET_CURRENT_BOARD', payload: newBoard.id });
-      } else if (userBoards.length > 0) {
-        dispatch({ type: 'SET_CURRENT_BOARD', payload: userBoards[0].id });
+      // Если предоставлена ссылка на доску, попытаться присоединиться
+      if (boardLink) {
+        await joinBoardByLink(boardLink);
+      } else {
+        // Проверяем, есть ли у пользователя доступ к доскам
+        const userBoards = state.boards.filter(board => 
+          board.createdBy === user.id || 
+          user.role === 'admin' ||
+          board.sharedWith?.includes(user.id)
+        );
+        
+        if (userBoards.length === 0 && user.role !== 'admin') {
+          const newBoard: Board = {
+            id: Date.now().toString(),
+            name: `ДОСКА ${user.name.toUpperCase()}`,
+            description: `ПЕРСОНАЛЬНАЯ ДОСКА ДЛЯ ${user.name.toUpperCase()}`,
+            createdBy: user.id,
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          };
+          dispatch({ type: 'ADD_BOARD', payload: newBoard });
+          dispatch({ type: 'SET_CURRENT_BOARD', payload: newBoard.id });
+        } else if (userBoards.length > 0) {
+          dispatch({ type: 'SET_CURRENT_BOARD', payload: userBoards[0].id });
+        }
       }
       
       return true;
@@ -300,7 +352,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     return false;
   };
 
-  const register = async (email: string, password: string, name: string): Promise<boolean> => {
+  const register = async (email: string, password: string, name: string, boardLink?: string): Promise<boolean> => {
     const existingUser = state.users.find(u => u.email === email);
     if (existingUser) {
       return false;
@@ -310,7 +362,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       id: Date.now().toString(),
       email,
       name: name.toUpperCase(),
-      role: 'user',
+      role: 'admin', // Новые пользователи становятся администраторами
       createdAt: new Date().toISOString(),
     };
 
@@ -318,17 +370,22 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     dispatch({ type: 'LOGIN', payload: newUser });
     setCurrentUserId(newUser.id);
     
-    // Create a personal board for the new user
-    const newBoard: Board = {
-      id: (Date.now() + 1).toString(),
-      name: `ДОСКА ${newUser.name}`,
-      description: `ПЕРСОНАЛЬНАЯ ДОСКА ДЛЯ ${newUser.name}`,
-      createdBy: newUser.id,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    };
-    dispatch({ type: 'ADD_BOARD', payload: newBoard });
-    dispatch({ type: 'SET_CURRENT_BOARD', payload: newBoard.id });
+    // Если предоставлена ссылка на доску, попытаться присоединиться
+    if (boardLink) {
+      await joinBoardByLink(boardLink);
+    } else {
+      // Создаем персональную доску для нового пользователя
+      const newBoard: Board = {
+        id: (Date.now() + 1).toString(),
+        name: `ДОСКА ${newUser.name}`,
+        description: `ПЕРСОНАЛЬНАЯ ДОСКА ДЛЯ ${newUser.name}`,
+        createdBy: newUser.id,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+      dispatch({ type: 'ADD_BOARD', payload: newBoard });
+      dispatch({ type: 'SET_CURRENT_BOARD', payload: newBoard.id });
+    }
     
     return true;
   };
@@ -343,6 +400,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       ...taskData,
       id: Date.now().toString(),
       boardId: taskData.boardId || state.currentBoardId || '1',
+      assigneeIds: taskData.assigneeIds || (taskData.assigneeId ? [taskData.assigneeId] : []),
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
@@ -422,7 +480,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   };
 
   const deleteBoard = (boardId: string) => {
-    // Check if user can delete this board
+    // Проверяем, может ли пользователь удалить эту доску
     const board = state.boards.find(b => b.id === boardId);
     if (!board) return;
     
@@ -436,7 +494,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     
     dispatch({ type: 'DELETE_BOARD', payload: boardId });
     
-    // Switch to another board if current board was deleted
+    // Переключаемся на другую доску, если текущая была удалена
     if (state.currentBoardId === boardId) {
       const remainingBoards = state.boards.filter(b => b.id !== boardId);
       if (remainingBoards.length > 0) {
@@ -470,6 +528,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     deleteBoard,
     setCurrentBoard,
     getCurrentBoardTasks,
+    joinBoardByLink,
+    generateBoardLink,
   };
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;

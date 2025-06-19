@@ -14,6 +14,7 @@ export interface Board {
   createdBy: string;
   createdAt: string;
   updatedAt: string;
+  sharedWith?: string[]; // Массив ID пользователей, с которыми поделились доской
 }
 
 export interface Task {
@@ -22,7 +23,8 @@ export interface Task {
   description: string;
   status: 'created' | 'in-progress' | 'completed';
   priority: 'high' | 'medium' | 'low';
-  assigneeId: string;
+  assigneeId: string; // Для обратной совместимости
+  assigneeIds?: string[]; // Множественное назначение
   creatorId: string;
   boardId: string;
   deadline?: string;

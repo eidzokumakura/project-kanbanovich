@@ -18,7 +18,6 @@ import {
   Mic,
   Square,
   Play,
-  Pause,
   Download,
 } from 'lucide-react';
 import { Task, User as UserType, Comment, Attachment } from '../types';
@@ -39,7 +38,7 @@ export function TaskModal({ task, isOpen, onClose, defaultStatus = 'created' }: 
     description: '',
     status: defaultStatus,
     priority: 'medium' as Task['priority'],
-    assigneeId: '',
+    assigneeIds: [] as string[], // Изменено на массив для множественного назначения
     deadline: '',
     isPinned: false,
   });
@@ -61,7 +60,7 @@ export function TaskModal({ task, isOpen, onClose, defaultStatus = 'created' }: 
         description: task.description,
         status: task.status,
         priority: task.priority,
-        assigneeId: task.assigneeId,
+        assigneeIds: task.assigneeIds || (task.assigneeId ? [task.assigneeId] : []),
         deadline: task.deadline ? format(new Date(task.deadline), 'yyyy-MM-dd') : '',
         isPinned: task.isPinned,
       });
@@ -73,7 +72,7 @@ export function TaskModal({ task, isOpen, onClose, defaultStatus = 'created' }: 
         description: '',
         status: defaultStatus,
         priority: 'medium',
-        assigneeId: currentUser?.id || '',
+        assigneeIds: currentUser?.id ? [currentUser.id] : [],
         deadline: '',
         isPinned: false,
       });
@@ -85,7 +84,7 @@ export function TaskModal({ task, isOpen, onClose, defaultStatus = 'created' }: 
     setHasUnsavedChanges(false);
   }, [task, currentUser, defaultStatus]);
 
-  // Track changes
+  // Отслеживание изменений
   useEffect(() => {
     if (task) {
       const hasChanges = 
@@ -93,7 +92,7 @@ export function TaskModal({ task, isOpen, onClose, defaultStatus = 'created' }: 
         formData.description !== task.description ||
         formData.status !== task.status ||
         formData.priority !== task.priority ||
-        formData.assigneeId !== task.assigneeId ||
+        JSON.stringify(formData.assigneeIds) !== JSON.stringify(task.assigneeIds || (task.assigneeId ? [task.assigneeId] : [])) ||
         formData.deadline !== (task.deadline ? format(new Date(task.deadline), 'yyyy-MM-dd') : '') ||
         formData.isPinned !== task.isPinned ||
         newAttachments.length > 0 ||
@@ -104,7 +103,7 @@ export function TaskModal({ task, isOpen, onClose, defaultStatus = 'created' }: 
       const hasChanges = 
         formData.title !== '' ||
         formData.description !== '' ||
-        formData.assigneeId !== (currentUser?.id || '') ||
+        formData.assigneeIds.length !== (currentUser?.id ? 1 : 0) ||
         formData.deadline !== '' ||
         formData.isPinned !== false ||
         newAttachments.length > 0 ||
@@ -121,7 +120,7 @@ export function TaskModal({ task, isOpen, onClose, defaultStatus = 'created' }: 
       return;
     }
     
-    // Process attachments
+    // Обработка вложений
     const processedAttachments = [
       ...attachments,
       ...newAttachments.map(file => ({
@@ -133,7 +132,7 @@ export function TaskModal({ task, isOpen, onClose, defaultStatus = 'created' }: 
       }))
     ];
 
-    // Add voice recording as attachment if exists
+    // Добавление голосовой записи как вложения, если существует
     if (audioBlob) {
       processedAttachments.push({
         id: Date.now().toString() + Math.random().toString(36).substr(2, 9),
@@ -147,7 +146,8 @@ export function TaskModal({ task, isOpen, onClose, defaultStatus = 'created' }: 
     const taskData = {
       ...formData,
       deadline: formData.deadline ? new Date(formData.deadline).toISOString() : undefined,
-      assigneeId: formData.assigneeId || currentUser?.id || '',
+      assigneeIds: formData.assigneeIds,
+      assigneeId: formData.assigneeIds[0] || currentUser?.id || '', // Обратная совместимость
       creatorId: currentUser?.id || '',
       boardId: task?.boardId || currentBoardId || '1',
       attachments: processedAttachments,
@@ -247,7 +247,7 @@ export function TaskModal({ task, isOpen, onClose, defaultStatus = 'created' }: 
       setMediaRecorder(recorder);
       setIsRecording(true);
     } catch (error) {
-      console.error('Error starting recording:', error);
+      console.error('Ошибка при запуске записи:', error);
       alert('НЕ УДАЛОСЬ ПОЛУЧИТЬ ДОСТУП К МИКРОФОНУ');
     }
   };
@@ -330,6 +330,15 @@ export function TaskModal({ task, isOpen, onClose, defaultStatus = 'created' }: 
       .replace(/\n/g, '<br>');
   };
 
+  // Обработка множественного выбора пользователей
+  const handleAssigneeChange = (userId: string, checked: boolean) => {
+    if (checked) {
+      setFormData({ ...formData, assigneeIds: [...formData.assigneeIds, userId] });
+    } else {
+      setFormData({ ...formData, assigneeIds: formData.assigneeIds.filter(id => id !== userId) });
+    }
+  };
+
   if (!isOpen) return null;
 
   const priorityLabels = {
@@ -361,7 +370,7 @@ export function TaskModal({ task, isOpen, onClose, defaultStatus = 'created' }: 
 
         <div className="overflow-y-auto max-h-[calc(90vh-140px)]">
           <form onSubmit={handleSubmit} className="p-6 space-y-6">
-            {/* Title */}
+            {/* Название */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2 uppercase">
                 НАЗВАНИЕ ЗАДАЧИ
@@ -376,14 +385,14 @@ export function TaskModal({ task, isOpen, onClose, defaultStatus = 'created' }: 
               />
             </div>
 
-            {/* Description with formatting */}
+            {/* Описание с форматированием */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2 uppercase">
                 ОПИСАНИЕ
               </label>
               
-              {/* Formatting toolbar */}
-              <div className="flex items-center space-x-1 mb-2 p-2 bg-[#CFE8FF] rounded-xl border">
+              {/* Панель инструментов форматирования */}
+              <div className="flex items-center space-x-1 mb-2 p-2 rounded-xl border" style={{ backgroundColor: '#CFE8FF' }}>
                 <button
                   type="button"
                   onClick={() => applyTextFormat('bold')}
@@ -461,7 +470,7 @@ export function TaskModal({ task, isOpen, onClose, defaultStatus = 'created' }: 
                 placeholder="ОПИШИТЕ ЗАДАЧУ..."
               />
               
-              {/* Preview formatted text */}
+              {/* Предварительный просмотр форматированного текста */}
               {formData.description && (
                 <div className="mt-2 p-3 bg-gray-50 rounded-xl border">
                   <div className="text-sm text-gray-600 mb-1 uppercase">ПРЕДВАРИТЕЛЬНЫЙ ПРОСМОТР:</div>
@@ -473,48 +482,50 @@ export function TaskModal({ task, isOpen, onClose, defaultStatus = 'created' }: 
               )}
             </div>
 
-            {/* File attachments and Voice recording */}
+            {/* Вложения и голосовые сообщения */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2 uppercase">
                 ВЛОЖЕНИЯ И ГОЛОСОВЫЕ СООБЩЕНИЯ
               </label>
               <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center space-x-2">
-                    <button
-                      type="button"
-                      onClick={() => fileInputRef.current?.click()}
-                      className="flex items-center space-x-2 px-4 py-2 bg-[#CFE8FF] rounded-xl hover:bg-blue-200 transition-colors"
-                    >
-                      <Upload className="w-4 h-4" />
-                      <span className="uppercase">ПРИКРЕПИТЬ ФАЙЛЫ</span>
-                    </button>
-                    
-                    <button
-                      type="button"
-                      onClick={isRecording ? stopRecording : startRecording}
-                      className={`flex items-center space-x-2 px-4 py-2 rounded-xl transition-colors ${
-                        isRecording 
-                          ? 'bg-red-100 text-red-700 hover:bg-red-200' 
-                          : 'bg-[#CFE8FF] hover:bg-blue-200'
-                      }`}
-                    >
-                      {isRecording ? (
-                        <>
-                          <Square className="w-4 h-4" />
-                          <span className="uppercase">ОСТАНОВИТЬ ЗАПИСЬ</span>
-                        </>
-                      ) : (
-                        <>
-                          <Mic className="w-4 h-4" />
-                          <span className="uppercase">ЗАПИСАТЬ ГОЛОС</span>
-                        </>
-                      )}
-                    </button>
-                  </div>
+                <div className="flex items-center space-x-2">
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    className="flex items-center space-x-2 px-4 py-2 rounded-xl transition-colors"
+                    style={{ backgroundColor: '#CFE8FF' }}
+                  >
+                    <Upload className="w-4 h-4" />
+                    <span className="uppercase">ПРИКРЕПИТЬ ФАЙЛЫ</span>
+                  </button>
                   
-                  {/* Audio playback - aligned right */}
-                  {audioBlob && (
+                  <button
+                    type="button"
+                    onClick={isRecording ? stopRecording : startRecording}
+                    className={`flex items-center space-x-2 px-4 py-2 rounded-xl transition-colors ${
+                      isRecording 
+                        ? 'bg-red-100 text-red-700 hover:bg-red-200' 
+                        : 'hover:opacity-80'
+                    }`}
+                    style={!isRecording ? { backgroundColor: '#CFE8FF' } : {}}
+                  >
+                    {isRecording ? (
+                      <>
+                        <Square className="w-4 h-4" />
+                        <span className="uppercase">ОСТАНОВИТЬ ЗАПИСЬ</span>
+                      </>
+                    ) : (
+                      <>
+                        <Mic className="w-4 h-4" />
+                        <span className="uppercase">ЗАПИСАТЬ ГОЛОС</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+                
+                {/* Воспроизведение аудио */}
+                {audioBlob && (
+                  <div className="flex flex-col space-y-2">
                     <div className="flex items-center space-x-2 p-3 bg-green-50 rounded-xl border border-green-200">
                       <button
                         type="button"
@@ -524,7 +535,6 @@ export function TaskModal({ task, isOpen, onClose, defaultStatus = 'created' }: 
                         <Play className="w-4 h-4" />
                         <span className="uppercase">ВОСПРОИЗВЕСТИ</span>
                       </button>
-                      <div class="flex items-center space-x-2 p-2 bg-blue-50 rounded-lg"><button type="button" class="flex items-center space-x-2 px-3 py-1 bg-blue-100 text-blue-700 rounded hover:bg-blue-200 transition-colors"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-play w-4 h-4"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg><span>Воспроизвести</span></button><span class="text-sm text-blue-700">Голосовое сообщение записано</span><button type="button" class="text-red-500 hover:text-red-700"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-x w-4 h-4"><path d="M18 6 6 18"></path><path d="m6 6 12 12"></path></svg></button></div>
                       <button
                         type="button"
                         onClick={() => setAudioBlob(null)}
@@ -533,8 +543,9 @@ export function TaskModal({ task, isOpen, onClose, defaultStatus = 'created' }: 
                         <X className="w-4 h-4" />
                       </button>
                     </div>
-                  )}
-                </div>
+                    <span className="text-sm text-green-700 uppercase">ГОЛОСОВОЕ СООБЩЕНИЕ ЗАПИСАНО</span>
+                  </div>
+                )}
 
                 <input
                   ref={fileInputRef}
@@ -544,12 +555,12 @@ export function TaskModal({ task, isOpen, onClose, defaultStatus = 'created' }: 
                   className="hidden"
                 />
                 
-                {/* Existing attachments */}
+                {/* Существующие вложения */}
                 {attachments.length > 0 && (
                   <div className="space-y-2">
                     <div className="text-sm font-medium text-gray-700 uppercase px-3 py-1 rounded">СУЩЕСТВУЮЩИЕ ВЛОЖЕНИЯ:</div>
                     {attachments.map((attachment) => (
-                      <div key={attachment.id} className="flex items-center justify-between p-3 bg-[#c8c8f7] rounded-xl border border-[#a7a7fc]">
+                      <div key={attachment.id} className="flex items-center justify-between p-3 rounded-xl border" style={{ backgroundColor: '#c8c8f7', borderColor: '#a7a7fc' }}>
                         <div className="flex items-center space-x-2">
                           <Paperclip className="w-4 h-4 text-blue-600" />
                           <span className="text-sm text-blue-800 uppercase">{attachment.name}</span>
@@ -588,7 +599,7 @@ export function TaskModal({ task, isOpen, onClose, defaultStatus = 'created' }: 
                   </div>
                 )}
                 
-                {/* New attachments */}
+                {/* Новые вложения */}
                 {newAttachments.length > 0 && (
                   <div className="space-y-2">
                     <div className="text-sm font-medium text-gray-700 uppercase">НОВЫЕ ВЛОЖЕНИЯ:</div>
@@ -615,7 +626,7 @@ export function TaskModal({ task, isOpen, onClose, defaultStatus = 'created' }: 
               </div>
             </div>
 
-            {/* Status, Priority, and Pin Row */}
+            {/* Статус, Приоритет и Закрепление */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2 uppercase">
@@ -661,25 +672,28 @@ export function TaskModal({ task, isOpen, onClose, defaultStatus = 'created' }: 
               </div>
             </div>
 
-            {/* Assignee and Deadline Row */}
+            {/* Назначение пользователей и Срок выполнения */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {currentUser?.role === 'admin' && (
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2 uppercase">
-                    НАЗНАЧИТЬ
+                    НАЗНАЧИТЬ ПОЛЬЗОВАТЕЛЕЙ
                   </label>
-                  <select
-                    value={formData.assigneeId}
-                    onChange={(e) => setFormData({ ...formData, assigneeId: e.target.value })}
-                    className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#CFE8FF] focus:border-[#CFE8FF] transition-colors uppercase"
-                  >
-                    <option value="">ВЫБЕРИТЕ ИСПОЛНИТЕЛЯ...</option>
+                  <div className="space-y-2 max-h-32 overflow-y-auto border border-gray-200 rounded-xl p-3">
                     {users.map(user => (
-                      <option key={user.id} value={user.id}>
-                        {user.name.toUpperCase()} ({user.role.toUpperCase()})
-                      </option>
+                      <label key={user.id} className="flex items-center space-x-2 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={formData.assigneeIds.includes(user.id)}
+                          onChange={(e) => handleAssigneeChange(user.id, e.target.checked)}
+                          className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                        />
+                        <span className="text-sm text-gray-700 uppercase">
+                          {user.name} ({user.role.toUpperCase()})
+                        </span>
+                      </label>
                     ))}
-                  </select>
+                  </div>
                 </div>
               )}
 
@@ -697,7 +711,7 @@ export function TaskModal({ task, isOpen, onClose, defaultStatus = 'created' }: 
               </div>
             </div>
 
-            {/* Comments Section */}
+            {/* Раздел комментариев */}
             {task && currentUser?.role === 'admin' && (
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-3 uppercase">
@@ -738,7 +752,8 @@ export function TaskModal({ task, isOpen, onClose, defaultStatus = 'created' }: 
                   <button
                     type="button"
                     onClick={handleAddComment}
-                    className="px-4 py-2 bg-[#CFE8FF] text-gray-700 rounded-xl hover:bg-blue-200 transition-colors text-sm font-medium uppercase"
+                    className="px-4 py-2 text-gray-700 rounded-xl transition-colors text-sm font-medium uppercase"
+                    style={{ backgroundColor: '#CFE8FF' }}
                   >
                     ДОБАВИТЬ
                   </button>
@@ -748,7 +763,7 @@ export function TaskModal({ task, isOpen, onClose, defaultStatus = 'created' }: 
           </form>
         </div>
 
-        {/* Footer */}
+        {/* Подвал */}
         <div className="flex items-center justify-between p-6 bg-gray-50 border-t border-gray-200">
           <div className="flex items-center">
             {task && (
@@ -774,7 +789,8 @@ export function TaskModal({ task, isOpen, onClose, defaultStatus = 'created' }: 
             
             <button
               onClick={handleSubmit}
-              className="flex items-center space-x-2 bg-[#CFE8FF] text-gray-800 px-6 py-3 rounded-xl hover:bg-blue-200 transition-all font-medium uppercase"
+              className="flex items-center space-x-2 text-gray-800 px-6 py-3 rounded-xl transition-all font-medium uppercase"
+              style={{ backgroundColor: '#CFE8FF' }}
             >
               <Save className="w-4 h-4" />
               <span>{task ? 'ОБНОВИТЬ' : 'СОЗДАТЬ'} ЗАДАЧУ</span>

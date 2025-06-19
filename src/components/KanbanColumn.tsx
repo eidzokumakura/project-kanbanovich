@@ -13,6 +13,7 @@ interface KanbanColumnProps {
   onTaskClick: (task: Task) => void;
   onCreateTask: () => void;
   color: string;
+  isMobile?: boolean;
 }
 
 export function KanbanColumn({
@@ -23,6 +24,7 @@ export function KanbanColumn({
   onTaskClick,
   onCreateTask,
   color,
+  isMobile = false,
 }: KanbanColumnProps) {
   const { setNodeRef } = useDroppable({ id });
 
@@ -39,7 +41,7 @@ export function KanbanColumn({
   };
 
   return (
-    <div className="flex flex-col h-full flex-1 max-w-sm">
+    <div className={`flex flex-col h-full ${isMobile ? 'w-full' : 'flex-1 max-w-sm'}`}>
       <div className={`border-2 border-dashed rounded-xl p-4 h-full ${colorClasses[color as keyof typeof colorClasses] || 'border-gray-200 bg-gray-50'} ${borderColors[color as keyof typeof borderColors] || 'border-gray-300'}`}>
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center space-x-2">
@@ -60,7 +62,7 @@ export function KanbanColumn({
         <div
           ref={setNodeRef}
           className="space-y-3 min-h-24 flex-1 overflow-y-auto scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-transparent"
-          style={{ maxHeight: 'calc(100vh - 300px)' }}
+          style={{ maxHeight: isMobile ? 'calc(100vh - 250px)' : 'calc(100vh - 300px)' }}
         >
           <SortableContext items={tasks.map(task => task.id)} strategy={verticalListSortingStrategy}>
             {tasks.map((task) => (

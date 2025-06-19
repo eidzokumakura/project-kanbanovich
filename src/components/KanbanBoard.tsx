@@ -20,6 +20,15 @@ export function KanbanBoard() {
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [createInColumn, setCreateInColumn] = useState<string | null>(null);
+  const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
+
+  React.useEffect(() => {
+    const handleResize = () => {
+      setIsMobile(window.innerWidth < 768);
+    };
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   const tasks = getCurrentBoardTasks();
 
@@ -77,7 +86,7 @@ export function KanbanBoard() {
     setCreateInColumn(null);
   };
 
-  // Sort tasks: pinned first, then by creation date
+  // Сортировка задач: закрепленные первыми, затем по дате создания
   const sortTasks = (tasks: Task[]) => {
     return [...tasks].sort((a, b) => {
       if (a.isPinned && !b.isPinned) return -1;
@@ -86,6 +95,61 @@ export function KanbanBoard() {
     });
   };
 
+  // Мобильная версия - одна колонка на экран с горизонтальной прокруткой
+  if (isMobile) {
+    return (
+      <div className="h-[calc(100vh-180px)] overflow-hidden">
+        <DndContext
+          sensors={sensors}
+          onDragStart={handleDragStart}
+          onDragEnd={handleDragEnd}
+        >
+          <div className="flex h-full overflow-x-auto snap-x snap-mandatory">
+            {columns.map((column) => {
+              const columnTasks = sortTasks(
+                tasks.filter(task => task.status === column.id)
+              );
+
+              return (
+                <div key={column.id} className="flex-shrink-0 w-full snap-start px-4">
+                  <KanbanColumn
+                    id={column.id}
+                    title={column.title}
+                    tasks={columnTasks}
+                    users={users}
+                    onTaskClick={handleTaskClick}
+                    onCreateTask={() => handleCreateTask(column.id)}
+                    color={column.color}
+                    isMobile={true}
+                  />
+                </div>
+              );
+            })}
+          </div>
+
+          <DragOverlay>
+            {activeTask && (
+              <TaskCard
+                task={activeTask}
+                users={users}
+                onClick={() => {}}
+                className="rotate-3 opacity-90"
+              />
+            )}
+          </DragOverlay>
+        </DndContext>
+
+        <TaskModal
+          task={selectedTask || undefined}
+          isOpen={isModalOpen}
+          onClose={handleModalClose}
+          defaultStatus={createInColumn as Task['status'] || 'created'}
+        />
+      </div>
+    );
+  }
+
+  // Десктопная версия - все колонки видны
   return (
     <div className="h-[calc(100vh-180px)] overflow-auto">
       <DndContext
@@ -109,6 +173,7 @@ export function KanbanBoard() {
                 onTaskClick={handleTaskClick}
                 onCreateTask={() => handleCreateTask(column.id)}
                 color={column.color}
+                isMobile={false}
               />
             );
           })}
